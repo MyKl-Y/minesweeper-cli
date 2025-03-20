@@ -111,4 +111,4 @@ def render_additional_info(state: GameState):
     elif state.game_over:
         print("\r\x1b[31mGame over\x1b[0m! You hit a mine!")
     else:
-        print(f"\r{cell_colors['*']}{state.num_mines}{cell_colors['END']} mines | {cell_colors['F']}{state.num_flags}{cell_colors['END']} flags")
+        print(f"\r{cell_colors['*']}{state.num_mines}{cell_colors['END']} mines | {cell_colors[3]}{state.num_flags}{cell_colors['END']} flags")

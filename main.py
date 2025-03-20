@@ -139,7 +139,7 @@ def main(rows: int, cols: int, difficulty: str, method: str):
 if __name__ == "__main__":
     rows = int(sys.argv[1]) if len(sys.argv) > 1 else 10
     cols = int(sys.argv[2]) if len(sys.argv) > 2 else 10
-    difficulty = sys.argv[3] if len(sys.argv) > 3 and not {"easy", "medium", "hard"} else "medium"
+    difficulty = sys.argv[3] if len(sys.argv) > 3 and [sys.argv[3]] == [val for val in ["easy", "medium", "hard"] if val == sys.argv[3]] else "medium"
     solver_method = sys.argv[4] if len(sys.argv) > 4 else "none"
 
     main(rows, cols, difficulty, solver_method)
