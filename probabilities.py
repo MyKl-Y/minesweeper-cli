@@ -8,7 +8,7 @@ import numpy as np
 from typing import List, Optional, Tuple
 from ms_types import Board, GameState, Cell
 
-def calc_probabilities(state: GameState) -> List[List[Optional[float]]]:
+def calc_probabilities(state: GameState, sample_threshold: int = 2**15, sample_size: int = 10000) -> List[List[Optional[float]]]:
     """
     Calculates the probability that each unrevealed cell contains a mine.
     
@@ -216,7 +216,7 @@ def calc_probabilities(state: GameState) -> List[List[Optional[float]]]:
 
     return prob_board
     '''
-    ''' Possible Faster Method 2'''
+    ''' Possible Faster Method 2
     board: Board = state.board
     rows, cols = len(board), len(board[0])
     
@@ -292,6 +292,124 @@ def calc_probabilities(state: GameState) -> List[List[Optional[float]]]:
             [None if board[i][j].is_revealed else mine_density for j in range(cols)]
             for i in range(rows)
         ]
+    
+    # Compute the number of bombs in each valid configuration.
+    bomb_counts = valid_configs.sum(axis=1)
+    max_bomb_count = bomb_counts.max()
+    
+    # Compute configuration weights using vectorized power.
+    # If M is zero (global density is zero), simply use weight 1.
+    if M == 0:
+        weights = np.ones(valid_configs.shape[0], dtype=float)
+    else:
+        weights = np.power(M, (max_bomb_count - bomb_counts))
+    total_weight = weights.sum()
+    
+    # For each constrained cell, compute its probability as the weighted sum of 
+    # configurations in which that cell is a bomb.
+    weighted_bomb_sum = (weights[:, None] * valid_configs).sum(axis=0)
+    cell_probs = weighted_bomb_sum / total_weight
+    
+    # Build the final probability board.
+    prob_board = []
+    for i in range(rows):
+        for j in range(cols):
+            cell: Cell = board[i][j]
+            if cell.is_revealed:
+                cell.probability = None
+            elif (i, j) in constrained_set:
+                cell.probability = cell_probs[constrained_index[(i, j)]]
+            else:
+                cell.probability = mine_density
+            prob_board.append(cell.probability)
+
+    return prob_board
+    '''
+    ''' Possible Faster Method 3'''
+    board: Board = state.board
+    rows, cols = len(board), len(board[0])
+    
+    # Separate unrevealed cells into two sets:
+    # constrained_set: cells adjacent to at least one revealed cell.
+    # unconstrained_set: cells not adjacent to any revealed cell.
+    constrained_set = set()
+    unconstrained_set = set()
+    
+    for i in range(rows):
+        for j in range(cols):
+            if not board[i][j].is_revealed:
+                adjacent = get_adjacent_positions(board, (i, j))
+                if any(board[r][c].is_revealed for r, c in adjacent):
+                    constrained_set.add((i, j))
+                else:
+                    unconstrained_set.add((i, j))
+    
+    total_unrevealed = len(constrained_set) + len(unconstrained_set)
+    num_remaining_mines = state.num_mines - state.num_flags
+    mine_density = num_remaining_mines / total_unrevealed if total_unrevealed > 0 else 0
+    M = (1 - mine_density) / mine_density if mine_density > 0 else 0
+
+    # Create a list and index lookup for constrained cells.
+    constrained_list = list(constrained_set)
+    constrained_index = {cell: idx for idx, cell in enumerate(constrained_list)}
+    N = len(constrained_list)
+    
+    ## Precompute masks and expected bomb counts for revealed cells touching constrained cells.
+    revealed_masks = []
+    revealed_targets = []
+    for i in range(rows):
+        for j in range(cols):
+            if board[i][j].is_revealed:
+                mask = np.zeros(N, dtype=np.int8)
+                adjacent = get_adjacent_positions(board, (i, j))
+                flagged_count = 0
+                for r, c in adjacent:
+                    if board[r][c].is_flagged:
+                        flagged_count += 1
+                    if (r, c) in constrained_set:
+                        idx = constrained_index[(r, c)]
+                        mask[idx] = 1
+                if mask.sum() > 0:
+                    revealed_masks.append(mask)
+                    revealed_targets.append(board[i][j].adjacent_count - flagged_count)
+    
+    # Decide whether to use full enumeration or Monte Carlo sampling.
+    total_configurations = 2 ** N
+    if total_configurations <= sample_threshold:
+        # Full enumeration via vectorized bit manipulation.
+        all_configs = np.arange(total_configurations, dtype=np.uint32)[:, None]
+        shifts = np.arange(N, dtype=np.uint32)
+        configs = ((all_configs >> shifts) & 1).astype(np.int8)  # Shape: (2^N, N)
+        
+        valid_mask = np.ones(configs.shape[0], dtype=bool)
+        for mask, target in zip(revealed_masks, revealed_targets):
+            counts = configs.dot(mask)
+            valid_mask &= (counts == target)
+            if not valid_mask.any():
+                break
+        valid_configs = configs[valid_mask]
+    else:
+        # Use Monte Carlo sampling to approximate the valid configurations.
+        valid_configs_list = []
+        attempts = 0
+        max_attempts = sample_size * 10  # Limit to avoid infinite loops.
+        while len(valid_configs_list) < sample_size and attempts < max_attempts:
+            assignment = np.random.randint(0, 2, size=(N,), dtype=np.int8)
+            valid = True
+            for mask, target in zip(revealed_masks, revealed_targets):
+                if (assignment * mask).sum() != target:
+                    valid = False
+                    break
+            if valid:
+                valid_configs_list.append(assignment)
+            attempts += 1
+        if len(valid_configs_list) == 0:
+            # Fallback: if no valid configuration is found, use global mine density.
+            return [
+                [None if board[i][j].is_revealed else mine_density for j in range(cols)]
+                for i in range(rows)
+            ]
+        valid_configs = np.array(valid_configs_list)
     
     # Compute the number of bombs in each valid configuration.
     bomb_counts = valid_configs.sum(axis=1)

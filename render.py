@@ -10,17 +10,18 @@ from ms_types import GameState, Cell, Mode
 
 cell_colors = {
     "F": '\033[91m',
-    "*": '\033[91m',
+    "FLAG": '\033[47;91m',
+    "*": '\033[40;91m',
     "win": '\033[42m',
-    0: '\033[90m',
-    1: '\033[94m',
-    2: '\033[92m',
-    3: '\033[93m',
-    4: '\033[95m',
-    5: '\033[96m',
-    6: '\033[97m',
-    7: '\033[91m',
-    8: '\033[92m',
+    0: '\033[40;90m',
+    1: '\033[40;94m',
+    2: '\033[40;92m',
+    3: '\033[40;93m',
+    4: '\033[40;95m',
+    5: '\033[40;96m',
+    6: '\033[40;97m',
+    7: '\033[40;91m',
+    8: '\033[40;92m',
     "END": '\033[0m'
 }
 
@@ -43,7 +44,7 @@ def render_state(state: GameState):
             is_cursor = (i, j) == state.cursor_pos
             cell: Cell = board[i][j]
             cell_str = draw_cell((i, j), cell, is_cursor, state)
-            state_str += cell_str + " "
+            state_str += cell_str
         print(state_str)
 
     if state.win or state.game_over:
@@ -91,18 +92,19 @@ def draw_cell(pos: tuple, cell: Cell, is_cursor: bool, state: GameState) -> str:
                 elif cell.probability == 1.0:
                     symbol += f"\x1b[41m  X  \x1b[0m"
                 else:
-                    symbol += f"{color} {100-int(round(cell.probability*100, 0))}. {cell_colors['END']}"
+                    val = 100 - int(round(cell.probability*100, 0))
+                    symbol += f"{color} {val}.{"0" if len(str(val)) == 1 else ""} {cell_colors['END']}"
     else:
         if cell.is_revealed:
             if cell.has_mine:
-                symbol = f"{cell_colors['*']}*{cell_colors['END']}"
+                symbol = f"{cell_colors['*']}* {cell_colors['END']}"
             else:
                 count = cell.adjacent_count
-                symbol = f"{cell_colors[count]}{count}{cell_colors['END']}"
+                symbol = f"{cell_colors[count]}{count} {cell_colors['END']}"
         elif cell.is_flagged:
-            symbol = f"{cell_colors['F']}F{cell_colors['END']}"
+            symbol = f"{cell_colors['FLAG']}F {cell_colors['END']}"
         elif not cell.is_revealed and not state.win:
-            symbol = f"\x1b[36;100m□\x1b[0m"
+            symbol = f"\x1b[40;37m▒▒\x1b[0m"
 
     if state.win and cell.has_mine:
         if cell.is_flagged:
@@ -155,4 +157,4 @@ def render_additional_info(state: GameState):
     elif state.game_over:
         print("\r\x1b[31mGame over\x1b[0m! You hit a mine!")
     else:
-        print(f"\r{cell_colors['*']}{state.num_mines}{cell_colors['END']} mines | {cell_colors[3]}{state.num_flags}{cell_colors['END']} flags")
+        print(f"\r\x1b[91m{state.num_mines}{cell_colors['END']} mines | {cell_colors[3]}{state.num_flags}{cell_colors['END']} flags")
