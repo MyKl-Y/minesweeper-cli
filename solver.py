@@ -193,7 +193,14 @@ def solve_board(board: Board, method: str) -> List[Tuple[int, int]]:
                 moves.append(pos)
         return moves
     elif method == "probability":
-        pass
+        moves = []
+        for row in range(rows):
+            for col in range(cols):
+                cell = board[row][col]
+                if not cell.is_revealed:
+                    if cell.probability == 0:
+                        moves.append((row, col))
+        return moves
     else:
         moves = []
 
