@@ -65,36 +65,53 @@ def draw_cell(pos: tuple, cell: Cell, is_cursor: bool, state: GameState) -> str:
     
     Hint: Use print statements and ANSI escape codes to position the cursor and draw symbols.
     """
+    if state.game_mode == Mode.PROB:
+        if cell.is_revealed:
+            if cell.has_mine:
+                symbol = f"{cell_colors['*']}  *  {cell_colors['END']}"
+            else:
+                count = cell.adjacent_count
+                symbol = f"{cell_colors[count]}  {count}  {cell_colors['END']}"
+        elif cell.is_flagged:
+            symbol = f"{cell_colors['F']}  F  {cell_colors['END']}"
+        elif not cell.is_revealed and not state.win:
+            color = ""
+            symbol = ""
+            if cell.probability >= 0.75:
+                color = "\x1b[44m"
+            elif cell.probability >= 0.50:
+                color = "\x1b[42m"
+            elif cell.probability >= 0.25:
+                color = "\x1b[43m"
+            elif cell.probability >= 0:
+                color = "\x1b[41m"
+            if cell.probability is not None:
+                if cell.probability == 0.0:
+                    symbol += f"\x1b[42m  0  \x1b[0m"
+                elif cell.probability == 1.0:
+                    symbol += f"\x1b[41m  X  \x1b[0m"
+                else:
+                    symbol += f"{color} {100-int(round(cell.probability*100, 0))}. {cell_colors['END']}"
+    else:
+        if cell.is_revealed:
+            if cell.has_mine:
+                symbol = f"{cell_colors['*']}*{cell_colors['END']}"
+            else:
+                count = cell.adjacent_count
+                symbol = f"{cell_colors[count]}{count}{cell_colors['END']}"
+        elif cell.is_flagged:
+            symbol = f"{cell_colors['F']}F{cell_colors['END']}"
+        elif not cell.is_revealed and not state.win:
+            symbol = f"\x1b[36;100m□\x1b[0m"
+
     if state.win and cell.has_mine:
         if cell.is_flagged:
             symbol = f"{cell_colors['win']}F{cell_colors['END']}"
         else:
             symbol = f"{cell_colors['win']}*{cell_colors['END']}"
-    if cell.is_revealed:
-        if cell.has_mine:
-            symbol = f"{cell_colors['*']}*{cell_colors['END']}"
-        else:
-            count = cell.adjacent_count
-            symbol = f"{cell_colors[count]}{count}{cell_colors['END']}"
-    elif cell.is_flagged:
-        symbol = f"{cell_colors['F']}F{cell_colors['END']}"
-    elif not cell.is_revealed and not state.win:
-        """if state.game_mode == Mode.PROB:
-            color_index = 0
-            if cell.probability >= 0.8:
-                color_index = 1
-            elif cell.probability >= 0.5:
-                color_index = 2
-            elif cell.probability >= 0.3:
-                color_index = 3
-            elif cell.probability >= 0.1:
-                color_index = 4
-            symbol = f"{cell_colors[color_index]}{cell.probability}{cell_colors['END']}"
-        else:"""
-        symbol = "□"
 
     if is_cursor:
-        symbol = f"\x1b[41m\033[4m{symbol}\033[0m" # Underline the cursor cell
+        symbol = f"\033[1;7;2m{symbol}\033[0m" # Underline the cursor cell
 
     return symbol
 
@@ -104,30 +121,35 @@ def render_additional_info(state: GameState):
     
     Hint: When in PROB mode, display probability information near each cell.
     """
+    print("\r\x1b[36mMyne-Sweeper\x1b[0m")
     if state.game_mode == Mode.PROB:
         print("\r\x1b[93mMine probabilities:\x1b[0m")
-        print("\r\x1b[93m-------------------\x1b[0m")
+        '''print("\r\x1b[93m-------------------\x1b[0m")
         for i in range(len(state.board)):
             row_str = "\r"
             for j in range(len(state.board[0])):
                 cell: Cell = state.board[i][j]
-                if not cell.is_revealed:
+                if cell.is_flagged:
+                    row_str += f" {cell_colors['F']} F {cell_colors['END']} "
+                elif not cell.is_revealed:
                     if cell.probability is not None:
-                        if cell.probability == 1.0:
-                            row_str += f"\x1b[41m100\x1b[0m "
+                        if cell.probability == 0.0:
+                            row_str += f"  \x1b[42m0\x1b[0m  "
+                        elif cell.probability == 1.0:
+                            row_str += f"  \x1b[41mX\x1b[0m  "
                         else:
-                            row_str += f"{int(round(cell.probability*100, 0)):03d} "
+                            row_str += f" {100-int(round(cell.probability*100, 0))}. "
                 else:
                     if cell.is_revealed:
                         if cell.has_mine:
-                            symbol = f" {cell_colors['*']} * {cell_colors['END']}"
+                            symbol = f"  {cell_colors['*']} * {cell_colors['END']}"
                         else:
                             count = cell.adjacent_count
-                            symbol = f" {cell_colors[count]}{count}{cell_colors['END']}"
+                            symbol = f"  {cell_colors[count]}{count}{cell_colors['END']}"
                     elif cell.is_flagged:
-                        symbol = f" {cell_colors['F']} F {cell_colors['END']}"
+                        symbol = f"  {cell_colors['F']} F {cell_colors['END']}"
                     row_str += symbol + "  "
-            print(row_str)
+            print(row_str)'''
     elif state.win:
         print("\r\x1b[32mCongratulations\x1b[0m! You won!")
     elif state.game_over:

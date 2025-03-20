@@ -3,6 +3,7 @@ Module: probabilities
 Description: Computes and provides mine probability estimates for unrevealed cells.
 """
 
+import time
 import numpy as np
 from typing import List, Optional, Tuple
 from ms_types import Board, GameState, Cell
@@ -13,18 +14,9 @@ def calc_probabilities(state: GameState) -> List[List[Optional[float]]]:
     
     Hint: Use heuristics based on adjacent revealed cells to calculate probability.
     """
+    ''' Original Slow Method
     board: Board = state.board
     rows, cols = len(board), len(board[0])
-
-    """
-        Find tiles with the following properties:
-        - They always hold a specific number of mines.
-        - They dont influence other mine placements.
-        - They are not revealed.
-        Also, find floating tiles.
-    """
-    tiles_with_fixed_mines = []
-    tiles_dont_influence = []
 
     # Identify constrained cells: unrevealed cells adjacent to a revealed cell.
     constrained_set = set()
@@ -44,16 +36,7 @@ def calc_probabilities(state: GameState) -> List[List[Optional[float]]]:
                 if (i, j) not in constrained_set:
                     unconstrained_set.add((i, j))
 
-    # Total floating tiles = all unrevealed cells
-    total_floating = len(constrained_set) + len(unconstrained_set)
-    num_remaining_mines = state.num_mines - state.num_flags
-    mine_density = num_remaining_mines / total_floating if total_floating > 0 else 0
-    M = (1 - mine_density) / mine_density if mine_density > 0 else 0
-
-    # -- Enumerate all valid bomb configurations for constrained cells --
-    constrained_list = list(constrained_set)
     valid_configs = [] # Each entry: (assignment, bomb_count)
-    n_constrained = len(constrained_list)
 
     def config_valid(assignment: List[bool]) -> bool:
         """
@@ -114,6 +97,106 @@ def calc_probabilities(state: GameState) -> List[List[Optional[float]]]:
                 weight_sum_bomb += w
         prob = weight_sum_bomb / total_weight if total_weight > 0 else 0
         constrained_prob[cell] = prob
+    '''
+    ''' Possible Faster Method 1
+    board: Board = state.board
+    rows, cols = len(board), len(board[0])
+
+    # Identify constrained cells: unrevealed cells adjacent to a revealed cell.
+    constrained_set = set()
+    for i in range(rows):
+        for j in range(cols):
+            if board[i][j].is_revealed:
+                for pos in get_adjacent_positions(board, (i, j)):
+                    r, c = pos
+                    if not board[r][c].is_revealed:
+                        constrained_set.add(pos)
+
+    # Unconstrained cells: unrevealed cells not adjacent to any revealed cells.
+    unconstrained_set = {(i, j) for i in range(rows) for j in range(cols)
+                        if not board[i][j].is_revealed and (i, j) not in constrained_set}
+
+    # Total floating tiles = all unrevealed cells
+    total_floating = len(constrained_set) + len(unconstrained_set)
+    num_remaining_mines = state.num_mines - state.num_flags
+    mine_density = num_remaining_mines / total_floating if total_floating > 0 else 0
+    M = (1 - mine_density) / mine_density if mine_density > 0 else 0
+
+    # -- Enumerate all valid bomb configurations for constrained cells --
+    constrained_list = list(constrained_set)
+    n_constrained = len(constrained_list)
+
+    # Early Exit: if no constrained cells, assign global mine density to all unrevealed cells.
+    if n_constrained == 0:
+        prob_board = [[None if board[i][j].is_revealed else mine_density 
+                        for j in range(cols)] for i in range(rows)]
+        return prob_board
+
+    # Generate all possible configurations for the constrained cells.
+    # For n_constrained <= 32, we can use np.uint32; adjust if needed.
+    num_configs = 2 ** n_constrained
+    # Create an array of all integers from 0 to num_configs-1.
+    ints = np.arange(num_configs, dtype=np.uint32)
+    # View these integers as bytes, then unpack bits.
+    # We need 32 bits per integer, then take the last n_constrained columns.
+    bits = np.unpackbits(ints.view(np.uint8)).reshape(-1, 4 * 8)
+    configs = bits[:, -n_constrained:].astype(bool)  # shape: (num_configs, n_constrained)
+
+    # Precompute the list of revealed cells with their adjacent-constrained mask and expected bomb count.
+    revealed_masks = []
+    expected_counts = []
+    for i in range(rows):
+        for j in range(cols):
+            if board[i][j].is_revealed:
+                adj = get_adjacent_positions(board, (i, j))
+                # Count flagged neighbors.
+                flagged_count = sum(1 for r, c in adj if board[r][c].is_flagged)
+                expected = board[i][j].adjacent_count - flagged_count
+                # Create a boolean mask for constrained cells adjacent to (i, j).
+                mask = np.array([((i2, j2) in adj) for (i2, j2) in constrained_list], dtype=bool)
+                # Only consider revealed cells that have adjacent constrained cells.
+                if mask.any():
+                    revealed_masks.append(mask)
+                    expected_counts.append(expected)
+    
+    # If there are no revealed constraints affecting constrained cells, fall back to global mine density.
+    if not revealed_masks:
+        prob_board = [[None if board[i][j].is_revealed else mine_density for j in range(cols)]
+                        for i in range(rows)]
+        return prob_board
+
+    revealed_masks = np.array(revealed_masks)  # shape: (num_revealed, n_constrained)
+    expected_counts = np.array(expected_counts)  # shape: (num_revealed,)
+
+    # For each revealed cell, compute bomb counts for all configurations.
+    # This yields an array of shape (num_configs, num_revealed)
+    config_counts = configs @ revealed_masks.T  # dot product over the constrained cells axis
+
+    # Check for validity: for each revealed cell, the bomb count must equal the expected count.
+    valid_mask = np.all(config_counts == expected_counts, axis=1)  # shape: (num_configs,)
+    valid_configs = configs[valid_mask]
+    
+    if valid_configs.shape[0] == 0:
+        # If no valid configuration, use mine_density as fallback.
+        prob_board = [[None if board[i][j].is_revealed else mine_density for j in range(cols)]
+                        for i in range(rows)]
+        return prob_board
+
+    # Compute bomb count for each valid configuration.
+    bomb_counts = valid_configs.sum(axis=1)  # shape: (num_valid_configs,)
+    max_bomb_count = bomb_counts.max()
+
+    # Compute weight for each valid configuration.
+    weights = np.power(M, max_bomb_count - bomb_counts, dtype=float) if M != 0 else np.ones_like(bomb_counts, dtype=float)
+    total_weight = weights.sum()
+
+    # Compute probability for each constrained cell.
+    # For each cell, get the weighted fraction of configurations where that cell is a bomb.
+    constrained_prob = {}
+    # valid_configs: shape (num_valid_configs, n_constrained)
+    for idx, cell in enumerate(constrained_list):
+        cell_weights = weights[valid_configs[:, idx]]
+        constrained_prob[cell] = cell_weights.sum() / total_weight
 
     # For each cell in the unconstrained set, use the global mine density.
     unconstrained_prob = {cell: mine_density for cell in unconstrained_set}
@@ -130,6 +213,115 @@ def calc_probabilities(state: GameState) -> List[List[Optional[float]]]:
             else:
                 cell.probability = unconstrained_prob[(i, j)]
             prob_board[i][j] = cell.probability
+
+    return prob_board
+    '''
+    ''' Possible Faster Method 2'''
+    board: Board = state.board
+    rows, cols = len(board), len(board[0])
+    
+    # Separate unrevealed cells into two sets:
+    # constrained_set: cells adjacent to at least one revealed cell.
+    # unconstrained_set: cells not adjacent to any revealed cell.
+    constrained_set = set()
+    unconstrained_set = set()
+    
+    for i in range(rows):
+        for j in range(cols):
+            if not board[i][j].is_revealed:
+                adjacent = get_adjacent_positions(board, (i, j))
+                if any(board[r][c].is_revealed for r, c in adjacent):
+                    constrained_set.add((i, j))
+                else:
+                    unconstrained_set.add((i, j))
+    
+    total_unrevealed = len(constrained_set) + len(unconstrained_set)
+    num_remaining_mines = state.num_mines - state.num_flags
+    mine_density = num_remaining_mines / total_unrevealed if total_unrevealed > 0 else 0
+    M = (1 - mine_density) / mine_density if mine_density > 0 else 0
+
+    # Create a list and index lookup for constrained cells.
+    constrained_list = list(constrained_set)
+    constrained_index = {cell: idx for idx, cell in enumerate(constrained_list)}
+    N = len(constrained_list)
+    
+    # If there are no constrained cells, assign global mine density to all unrevealed cells.
+    if N == 0:
+        return [
+            [None if board[i][j].is_revealed else mine_density for j in range(cols)]
+            for i in range(rows)
+        ]
+    
+    # Generate all possible configurations (2^N rows, each with N binary values).
+    all_configs = np.arange(2 ** N, dtype=np.uint32)[:, None]
+    shifts = np.arange(N, dtype=np.uint32)
+    configs = ((all_configs >> shifts) & 1).astype(np.int8)  # Shape: (2^N, N)
+    
+    # Initialize valid configuration mask.
+    valid_mask = np.ones(configs.shape[0], dtype=bool)
+    
+    # For each revealed cell that touches constrained cells, create a binary mask and enforce its constraint.
+    for i in range(rows):
+        for j in range(cols):
+            if board[i][j].is_revealed:
+                mask = np.zeros(N, dtype=np.int8)
+                adjacent = get_adjacent_positions(board, (i, j))
+                flagged_count = 0
+                for r, c in adjacent:
+                    if board[r][c].is_flagged:
+                        flagged_count += 1
+                    if (r, c) in constrained_set:
+                        idx = constrained_index[(r, c)]
+                        mask[idx] = 1
+                # Only apply if the revealed cell touches any constrained cell.
+                if mask.sum() > 0:
+                    expected = board[i][j].adjacent_count - flagged_count
+                    counts = configs.dot(mask)
+                    valid_mask &= (counts == expected)
+                    if not valid_mask.any():
+                        break  # No valid configuration remains.
+        else:
+            continue
+        break  # Early exit if a break occurred in the inner loop.
+    
+    valid_configs = configs[valid_mask]
+    
+    # If no valid configuration is found, fallback to global mine density.
+    if valid_configs.size == 0:
+        return [
+            [None if board[i][j].is_revealed else mine_density for j in range(cols)]
+            for i in range(rows)
+        ]
+    
+    # Compute the number of bombs in each valid configuration.
+    bomb_counts = valid_configs.sum(axis=1)
+    max_bomb_count = bomb_counts.max()
+    
+    # Compute configuration weights using vectorized power.
+    # If M is zero (global density is zero), simply use weight 1.
+    if M == 0:
+        weights = np.ones(valid_configs.shape[0], dtype=float)
+    else:
+        weights = np.power(M, (max_bomb_count - bomb_counts))
+    total_weight = weights.sum()
+    
+    # For each constrained cell, compute its probability as the weighted sum of 
+    # configurations in which that cell is a bomb.
+    weighted_bomb_sum = (weights[:, None] * valid_configs).sum(axis=0)
+    cell_probs = weighted_bomb_sum / total_weight
+    
+    # Build the final probability board.
+    prob_board = []
+    for i in range(rows):
+        for j in range(cols):
+            cell: Cell = board[i][j]
+            if cell.is_revealed:
+                cell.probability = None
+            elif (i, j) in constrained_set:
+                cell.probability = cell_probs[constrained_index[(i, j)]]
+            else:
+                cell.probability = mine_density
+            prob_board.append(cell.probability)
 
     return prob_board
 
