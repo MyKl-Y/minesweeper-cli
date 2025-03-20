@@ -50,7 +50,7 @@ def render_state(state: GameState):
     if state.win or state.game_over:
         print("\n\rUse:")
         print("\r - '\033[93mSHIFT\033[0m + \033[94mn\033[0m' ['\033[94mN\033[0m'] to start new game")
-        print("\r - '\033[93mSHIFT\033[0m + \033[94mq\033[0m' ['\033[94mQ\033[0m'] to quit.\n")
+        print("\r - '\033[93mSHIFT\033[0m + \033[94mq\033[0m' ['\033[94mQ\033[0m'] to quit.")
     else:
         print("\n\rUse:")
         print("\r - '\033[94mw\033[0m', '\033[94ma\033[0m', '\033[94ms\033[0m', and/or '\033[94md\033[0m' to move")
@@ -58,7 +58,7 @@ def render_state(state: GameState):
         print("\r - '\033[94mf\033[0m' to flag")
         print("\r - '\033[93mSHIFT\033[0m + \033[94ms\033[0m' ['\033[94mS\033[0m'] to toggle solver")
         print("\r - '\033[93mSHIFT\033[0m + \033[94mp\033[0m' ['\033[94mP\033[0m'] to toggle probability")
-        print("\r - '\033[93mSHIFT\033[0m + \033[94mq\033[0m' ['\033[94mQ\033[0m'] to quit.\n")
+        print("\r - '\033[93mSHIFT\033[0m + \033[94mq\033[0m' ['\033[94mQ\033[0m'] to quit.")
 
 def draw_cell(pos: tuple, cell: Cell, is_cursor: bool, state: GameState) -> str:
     """
