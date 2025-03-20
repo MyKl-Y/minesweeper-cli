@@ -8,6 +8,7 @@ from board import init_board, place_mines, update_board, place_mines_after_first
 from input import get_action_from_input, set_raw_mode, restore_terminal, Action
 from render import render_state
 from solver import apply_solver, check_win_condition
+from probabilities import calc_probabilities
 # You may also import update_state from a game_logic module if you choose to separate it.
 
 def new_game(rows: int, cols: int, difficulty: str, method: str) -> GameState:
@@ -78,6 +79,7 @@ def update_state(action, state: GameState, num_mines: int, method: str, difficul
         state = apply_solver(state, method, num_mines)
     elif action == Action.TOGGLE_PROBABILITY:
         state.game_mode = Mode.PROB
+        calc_probabilities(state)
     elif action == Action.QUIT:
         state.exit = True
     elif action == Action.NEW_GAME:

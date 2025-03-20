@@ -13,7 +13,7 @@ def init_board(rows: int, cols: int) -> Board:
     
     Hint: Create a 2D list of Cell objects with default values (no mine, not revealed, not flagged).
     """
-    return np.array([[Cell(False, False, False, 0) for _ in range(cols)] for _ in range(rows)], dtype=Cell)
+    return np.array([[Cell(False, False, False, 0, 0.0) for _ in range(cols)] for _ in range(rows)], dtype=Cell)
 
 def place_mines(board: Board, num_mines: int) -> Board:
     """

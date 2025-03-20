@@ -42,7 +42,7 @@ def render_state(state: GameState):
         for j in range(cols):
             is_cursor = (i, j) == state.cursor_pos
             cell: Cell = board[i][j]
-            cell_str = draw_cell((i, j), cell, is_cursor, state.win)
+            cell_str = draw_cell((i, j), cell, is_cursor, state)
             state_str += cell_str + " "
         print(state_str)
 
@@ -59,13 +59,13 @@ def render_state(state: GameState):
         print("\r - '\033[93mSHIFT\033[0m + \033[94mp\033[0m' ['\033[94mP\033[0m'] to toggle probability")
         print("\r - '\033[93mSHIFT\033[0m + \033[94mq\033[0m' ['\033[94mQ\033[0m'] to quit.\n")
 
-def draw_cell(pos: tuple, cell: Cell, is_cursor: bool, win: bool) -> str:
+def draw_cell(pos: tuple, cell: Cell, is_cursor: bool, state: GameState) -> str:
     """
     Draws an individual cell at a given position.
     
     Hint: Use print statements and ANSI escape codes to position the cursor and draw symbols.
     """
-    if win and cell.has_mine:
+    if state.win and cell.has_mine:
         if cell.is_flagged:
             symbol = f"{cell_colors['win']}F{cell_colors['END']}"
         else:
@@ -78,7 +78,19 @@ def draw_cell(pos: tuple, cell: Cell, is_cursor: bool, win: bool) -> str:
             symbol = f"{cell_colors[count]}{count}{cell_colors['END']}"
     elif cell.is_flagged:
         symbol = f"{cell_colors['F']}F{cell_colors['END']}"
-    elif not cell.is_revealed and not win:
+    elif not cell.is_revealed and not state.win:
+        """if state.game_mode == Mode.PROB:
+            color_index = 0
+            if cell.probability >= 0.8:
+                color_index = 1
+            elif cell.probability >= 0.5:
+                color_index = 2
+            elif cell.probability >= 0.3:
+                color_index = 3
+            elif cell.probability >= 0.1:
+                color_index = 4
+            symbol = f"{cell_colors[color_index]}{cell.probability}{cell_colors['END']}"
+        else:"""
         symbol = "□"
 
     if is_cursor:
@@ -93,20 +105,30 @@ def render_additional_info(state: GameState):
     Hint: When in PROB mode, display probability information near each cell.
     """
     if state.game_mode == Mode.PROB:
-        board = state.board
-        rows, cols = board.shape
-
-        for i in range(rows):
-            line = ""
-            for j in range(cols):
-                cell = board[i][j]
+        print("\r\x1b[93mMine probabilities:\x1b[0m")
+        print("\r\x1b[93m-------------------\x1b[0m")
+        for i in range(len(state.board)):
+            row_str = "\r"
+            for j in range(len(state.board[0])):
+                cell: Cell = state.board[i][j]
                 if not cell.is_revealed:
-                    prob = f"{cell_colors['F']}P{cell_colors['END']}"
+                    if cell.probability is not None:
+                        if cell.probability == 1.0:
+                            row_str += f"\x1b[41m100\x1b[0m "
+                        else:
+                            row_str += f"{int(round(cell.probability*100, 0)):03d} "
                 else:
-                    prob = " "
-                line += prob + " "
-            print(line)
-    if state.win:
+                    if cell.is_revealed:
+                        if cell.has_mine:
+                            symbol = f" {cell_colors['*']} * {cell_colors['END']}"
+                        else:
+                            count = cell.adjacent_count
+                            symbol = f" {cell_colors[count]}{count}{cell_colors['END']}"
+                    elif cell.is_flagged:
+                        symbol = f" {cell_colors['F']} F {cell_colors['END']}"
+                    row_str += symbol + "  "
+            print(row_str)
+    elif state.win:
         print("\r\x1b[32mCongratulations\x1b[0m! You won!")
     elif state.game_over:
         print("\r\x1b[31mGame over\x1b[0m! You hit a mine!")

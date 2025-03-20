@@ -20,6 +20,7 @@ class Cell:
     is_revealed: bool      # True if the cell has been revealed.
     is_flagged: bool       # True if the cell is flagged.
     adjacent_count: int    # Number of adjacent mines.
+    probability: float     # Probability of containing a mine.
 
 # Define Board as a list of lists of Cells.
 Board = np.ndarray
